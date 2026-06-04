@@ -1,75 +1,77 @@
 # 🤖 AGCRA — Autonomous GitHub Code Review Agent
 
-An AI-powered agent that **automatically reviews every pull request** and posts structured, line-by-line review comments directly on GitHub — fully deployed and running 24/7.
+An AI-powered agent that **automatically reviews every pull request** and posts structured, line-by-line security and quality findings directly on GitHub — fully deployed and running 24/7.
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![Live Demo](https://img.shields.io/badge/demo-live-brightgreen.svg)](https://autonomous-github-code-review-agent.onrender.com/health)
+[![Live Demo](https://img.shields.io/badge/demo-live%20on%20Render-brightgreen.svg)](https://autonomous-github-code-review-agent.onrender.com/health)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Deploy on Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com)
+[![Powered by Groq](https://img.shields.io/badge/LLM-Groq%20LLaMA%203.3%2070B-orange.svg)](https://console.groq.com)
 
-🌐 **Live deployment:** `https://autonomous-github-code-review-agent.onrender.com`
+🌐 **Live:** `https://autonomous-github-code-review-agent.onrender.com`
 
 ---
 
 ## What It Does
 
-- ✅ **Auto-triggers** on every new pull request via GitHub webhooks
-- ✅ **Reviews code** for bugs, security vulnerabilities, and performance anti-patterns
-- ✅ **Posts inline comments** line-by-line directly on the GitHub PR diff
-- ✅ **Generates a quality score** (1–10) with a markdown summary comment
-- ✅ **Cross-references** changes against existing codebase patterns using RAG
-- ✅ **Learns from feedback** — dismissed suggestions are remembered for future PRs
-- ✅ **Provider-agnostic** — works with Groq (free), Anthropic (Claude), or Google Gemini
+Every time a pull request is opened on a connected repository, AGCRA:
+
+1. **Fetches** the PR diff and full file context via GitHub API
+2. **Analyzes** the code using LLaMA 3.3 70B (via Groq) for bugs, security issues, and anti-patterns
+3. **Posts** inline review comments at the exact lines with issues
+4. **Summarizes** with an overall quality score (1–10) and top concerns
+5. **Learns** from dismissed feedback to avoid repeat false positives
 
 ## Live Demo
 
-PR #1 on this repo was automatically reviewed by the agent. It found **17 real bugs** including:
+**PR #4** on this repo was reviewed automatically by AGCRA within 60 seconds of opening. It found **20+ security issues** in a realistic e-commerce order management module:
 
-| Severity | Issue | Location |
-|----------|-------|----------|
-| 🔴 HIGH | SQL Injection Vulnerability | `auth.py:8` |
-| 🔴 HIGH | Hardcoded Secret Key + Leaked API Token | `auth.py:60` |
-| 🔴 HIGH | Cryptographically Broken Hash (MD5) | `auth.py:20` |
-| 🔴 HIGH | `eval()` on user input (Remote Code Execution) | `processor.py:36` |
-| 🔴 HIGH | N+1 Query Pattern | `auth.py:30` |
-| 🟡 MED | ZeroDivisionError | `processor.py:45` |
-| + 11 more | ... | ... |
+| Severity | Issue | File:Line |
+|----------|-------|-----------|
+| 🔴 HIGH | Hardcoded production DB credentials + API keys | `order_manager.py:13` |
+| 🔴 HIGH | SQL Injection in `get_order()` via string concatenation | `order_manager.py:22` |
+| 🔴 HIGH | Shell injection via `subprocess.run(shell=True)` | `order_manager.py:40` |
+| 🔴 HIGH | `pickle.loads()` on untrusted input (Remote Code Execution) | `order_manager.py:62` |
+| 🔴 HIGH | Directory traversal in `export_orders()` | `order_manager.py:73` |
+| 🔴 HIGH | MD5 for credit card hashing (cryptographically broken) | `order_manager.py:45` |
+| 🟡 MED | N+1 query pattern in `get_all_orders()` | `order_manager.py:50` |
+| 🟡 MED | Resource leak — DB connections never closed | `order_manager.py:22` |
+| 🟡 MED | ZeroDivisionError in `apply_discount()` | `order_manager.py:67` |
+| + more | ... | ... |
 
-**Quality Score: 2/10** — [See the full review on PR #1 →](https://github.com/DarkKnight765/Autonomous_GitHub_Code_Review_Agent/pull/1)
+**Quality Score: 2/10** → [See the full review on PR #4 →](https://github.com/DarkKnight765/Autonomous_GitHub_Code_Review_Agent/pull/4)
 
 ---
 
 ## Architecture
 
 ```
-GitHub PR opened
+PR opened on GitHub
     │  webhook POST (HMAC-verified)
     ▼
-FastAPI Webhook Server (Render)
-    │
+FastAPI Webhook Server (Render — always on)
+    │  background task dispatched
     ▼
 LangGraph Pipeline
     ├── Node 1: Fetch PR diff + metadata (PyGithub)
-    ├── Node 2: Fetch full file context
-    ├── Node 3: RAG similarity search (ChromaDB)
+    ├── Node 2: Fetch full file content for context
+    ├── Node 3: AI analysis per file (Groq LLaMA 3.3 70B)
     ├── Node 4: Load feedback history (SQLite)
-    ├── Node 5: AI analysis per file (Groq / Anthropic / Gemini)
-    ├── Node 6: Aggregate + deduplicate findings
-    ├── Node 7: Generate quality score + summary
-    └── Node 8: Post inline comments + summary to GitHub PR
+    ├── Node 5: Aggregate + deduplicate findings
+    ├── Node 6: Generate quality score + summary
+    └── Node 7: Post inline comments + summary to GitHub PR
 ```
 
 ## Tech Stack
 
 | Component | Technology |
 |-----------|-----------|
-| **AI / LLM** | Groq (llama-3.3-70b-versatile) · Anthropic Claude · Google Gemini |
+| **AI / LLM** | [Groq](https://console.groq.com) (llama-3.3-70b-versatile) · Anthropic Claude · Google Gemini |
 | **Workflow Engine** | LangGraph (StateGraph) |
 | **GitHub Integration** | PyGithub |
 | **API Server** | FastAPI + Uvicorn |
-| **RAG / Vector Store** | ChromaDB + SentenceTransformers (all-MiniLM-L6-v2) |
 | **Feedback Storage** | SQLite |
-| **Deployment** | Render (Docker) |
+| **Deployment** | Render (Docker, free tier) |
+| **Keep-Alive** | GitHub Actions cron (every 10 min) |
 | **Language** | Python 3.12+ |
 
 ---
@@ -88,59 +90,61 @@ pip install -r requirements.txt
 
 ```bash
 cp .env.example .env
-# Edit .env with your keys
+# Fill in your keys
 ```
 
-Required variables:
+Minimum required variables:
 
-| Variable | Description |
-|----------|-------------|
-| `GITHUB_TOKEN` | GitHub Personal Access Token (needs `repo` scope) |
-| `GITHUB_WEBHOOK_SECRET` | Random string for webhook HMAC verification |
-| `GROQ_API_KEY` | Free at [console.groq.com](https://console.groq.com) |
-| `LLM_PROVIDER` | `groq` · `anthropic` · `gemini` |
-| `REVIEW_MODEL` | `llama-3.3-70b-versatile` (Groq default) |
+| Variable | Where to get it |
+|----------|----------------|
+| `GITHUB_TOKEN` | [github.com/settings/tokens](https://github.com/settings/tokens) — needs `repo` scope |
+| `GITHUB_WEBHOOK_SECRET` | Any random string: `python -c "import secrets; print(secrets.token_hex(32))"` |
+| `GROQ_API_KEY` | Free at [console.groq.com](https://console.groq.com) — 1M tokens/day |
+| `LLM_PROVIDER` | `groq` |
+| `TARGET_REPO` | `owner/repo-name` |
 
 ### 3. Run Manually (No Webhook Needed)
 
 ```bash
-# Review any PR right now
+# Review any PR immediately
 python scripts/run_review.py --repo owner/repo --pr 42
 
 # Dry run — analyze but don't post comments
 python scripts/run_review.py --repo owner/repo --pr 42 --dry-run
 ```
 
-### 4. Run with Auto-Webhook (Local)
+### 4. Run Locally with Auto-Webhook
 
 ```bash
 # Starts FastAPI server + ngrok tunnel in one command
 python start_agent.py
-# Prints your public URL — add it as a GitHub webhook
+# Prints your public webhook URL — add it to GitHub repo settings
 ```
 
 ---
 
-## Deployment (Cloud — Recommended)
+## Cloud Deployment (Free)
 
-### Deploy to Render (Free, No Credit Card)
+### Deploy to Render
+
+> **Free tier, no credit card required. Always-on via GitHub Actions keep-alive.**
 
 1. Fork this repo
 2. Go to [render.com](https://render.com) → **New → Web Service**
-3. Connect your GitHub repo
-4. Select **Docker** runtime (Dockerfile is included)
-5. Add environment variables (see table above)
-6. Click **Deploy**
-7. Set the webhook URL in your GitHub repo:
+3. Connect your GitHub fork → select **Docker** runtime
+4. Add environment variables (see table above)
+5. Deploy → set the webhook URL in your GitHub repo:
    ```
    https://your-app.onrender.com/webhook
    ```
+6. Enable **GitHub Actions** in your fork (already configured in `.github/workflows/keep_alive.yml`)
 
-### Deploy to Railway
+> The `keep_alive.yml` workflow pings your Render server every 10 minutes to prevent free-tier sleep.
 
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app)
+### Why the Slim Docker Image?
 
-`railway.toml` is included — just connect your repo and add environment variables.
+The production `Dockerfile` uses `requirements-prod.txt` which **excludes** `chromadb` and `sentence-transformers` to stay within Render's 512MB free tier RAM limit.  
+For local development with full RAG support, use `pip install -r requirements.txt`.
 
 ---
 
@@ -148,25 +152,51 @@ python start_agent.py
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/health` | GET | Health check + review counter |
-| `/webhook` | POST | GitHub webhook receiver (HMAC verified) |
+| `/health` | GET | Health check + reviews processed counter |
+| `/webhook` | POST | GitHub webhook receiver (HMAC-verified) |
 
 ```bash
-# Check if the server is live
+# Check live server
 curl https://autonomous-github-code-review-agent.onrender.com/health
 # → {"status":"healthy","service":"AGCRA","version":"0.1.0","reviews_processed":N}
 ```
 
 ---
 
-## Index Your Codebase for Smarter Reviews (Optional)
+## Switching LLM Providers
+
+Change in `.env` — no code changes needed:
 
 ```bash
-# Index your repo into ChromaDB for RAG-powered context-aware reviews
-python scripts/index_repo.py --path .
+# Groq (default — free, 1M tokens/day)
+LLM_PROVIDER=groq
+REVIEW_MODEL=llama-3.3-70b-versatile
+GROQ_API_KEY=gsk_...
+
+# Anthropic Claude
+LLM_PROVIDER=anthropic
+REVIEW_MODEL=claude-3-5-sonnet-20241022
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Google Gemini
+LLM_PROVIDER=gemini
+REVIEW_MODEL=gemini-2.0-flash
+GEMINI_API_KEY=AIza...
 ```
 
-This embeds your entire codebase so the agent can find similar patterns and avoid flagging known false positives.
+---
+
+## (Optional) RAG-Powered Context-Aware Reviews
+
+Index your codebase so the agent can cross-reference similar patterns:
+
+```bash
+# Requires full requirements: pip install -r requirements.txt
+python scripts/index_repo.py --path .
+# → Indexes 37+ files, 99+ chunks into ChromaDB
+```
+
+RAG is automatically disabled in cloud deployments (no chroma_db directory) to save memory.
 
 ---
 
@@ -174,60 +204,40 @@ This embeds your entire codebase so the agent can find similar patterns and avoi
 
 ```
 src/
-├── config.py              # Central typed configuration
+├── config.py              # Central typed configuration (pydantic)
 ├── webhook/               # FastAPI webhook listener
-│   ├── app.py             # Routes + background dispatch
-│   ├── security.py        # HMAC signature verification
-│   └── models.py          # Pydantic webhook event models
+│   ├── app.py             # Routes + HMAC-verified background dispatch
+│   ├── security.py        # Webhook signature verification
+│   └── models.py          # Pydantic GitHub event models
 ├── github_client/         # GitHub API wrapper
 │   ├── client.py          # PyGithub operations
 │   └── diff_parser.py     # Unified diff parser
 ├── mcp_server/            # MCP server (Claude Desktop compatible)
 │   └── server.py          # FastMCP + GitHub tools
 ├── review/                # LangGraph review pipeline
-│   ├── state.py           # Pipeline state definition
+│   ├── state.py           # ReviewState TypedDict
 │   ├── prompts.py         # LLM prompt templates
-│   ├── nodes.py           # Graph node functions (provider-agnostic)
+│   ├── nodes.py           # Node functions (provider-agnostic)
 │   └── graph.py           # StateGraph wiring
-├── rag/                   # ChromaDB RAG layer
+├── rag/                   # ChromaDB RAG (local dev only)
 │   ├── indexer.py         # Codebase indexer
-│   └── retriever.py       # Pattern retriever
+│   └── retriever.py       # Similarity search
 └── feedback/              # Feedback learning loop
-    ├── store.py           # SQLite feedback storage
-    └── learning.py        # Suppression logic
+    ├── store.py            # SQLite dismissed suggestions store
+    └── learning.py         # Suppression logic
 
 scripts/
-├── run_review.py          # Manual PR review CLI
-├── index_repo.py          # Codebase RAG indexer
-└── test_mcp_server.py     # MCP server test tool
+├── run_review.py           # Manual PR review CLI
+├── index_repo.py           # RAG codebase indexer
+└── test_mcp_server.py      # MCP tool tester
 
-Dockerfile                 # Docker image for deployment
-railway.toml               # Railway deployment config
-render.yaml                # Render deployment config
-start_agent.py             # One-command local startup (server + ngrok)
-```
+.github/workflows/
+└── keep_alive.yml          # Cron: ping Render every 10 min
 
----
-
-## Switching LLM Providers
-
-Change the provider in `.env` — no code changes needed:
-
-```bash
-# Use Groq (free — 1M tokens/day)
-LLM_PROVIDER=groq
-REVIEW_MODEL=llama-3.3-70b-versatile
-GROQ_API_KEY=gsk_...
-
-# Use Anthropic Claude
-LLM_PROVIDER=anthropic
-REVIEW_MODEL=claude-3-5-sonnet-20241022
-ANTHROPIC_API_KEY=sk-ant-...
-
-# Use Google Gemini
-LLM_PROVIDER=gemini
-REVIEW_MODEL=gemini-2.0-flash
-GEMINI_API_KEY=AIza...
+Dockerfile                  # Slim production image (no chromadb)
+requirements.txt            # Full deps (local dev + RAG)
+requirements-prod.txt       # Slim deps (cloud deployment)
+start_agent.py              # One-command local startup (server + ngrok)
 ```
 
 ---
@@ -237,7 +247,6 @@ GEMINI_API_KEY=AIza...
 ```bash
 pip install -e ".[dev]"
 python -m pytest tests/ -v
-# 34 tests passing
 ```
 
 ---
