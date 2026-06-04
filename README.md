@@ -1,73 +1,86 @@
 # 🤖 AGCRA — Autonomous GitHub Code Review Agent
 
-An MCP-powered AI agent that automatically reviews every pull request and posts structured, line-by-line review comments on GitHub.
+An AI-powered agent that **automatically reviews every pull request** and posts structured, line-by-line review comments directly on GitHub — fully deployed and running 24/7.
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![Live Demo](https://img.shields.io/badge/demo-live-brightgreen.svg)](https://autonomous-github-code-review-agent.onrender.com/health)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Deploy on Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com)
+
+🌐 **Live deployment:** `https://autonomous-github-code-review-agent.onrender.com`
 
 ---
 
 ## What It Does
 
-- ✅ **Connects** to your GitHub repository via a custom-built MCP server  
-- ✅ **Triggers automatically** every time a new pull request is opened  
-- ✅ **Reviews code** for bugs, security vulnerabilities, and performance anti-patterns  
-- ✅ **Cross-references** changes against existing codebase patterns using RAG over your repo  
-- ✅ **Posts structured** line-by-line review comments directly on the GitHub PR  
-- ✅ **Learns from feedback** — dismissed suggestions are remembered for future PRs  
-- ✅ **Generates a summary** comment with overall quality score and top 3 concerns  
+- ✅ **Auto-triggers** on every new pull request via GitHub webhooks
+- ✅ **Reviews code** for bugs, security vulnerabilities, and performance anti-patterns
+- ✅ **Posts inline comments** line-by-line directly on the GitHub PR diff
+- ✅ **Generates a quality score** (1–10) with a markdown summary comment
+- ✅ **Cross-references** changes against existing codebase patterns using RAG
+- ✅ **Learns from feedback** — dismissed suggestions are remembered for future PRs
+- ✅ **Provider-agnostic** — works with Groq (free), Anthropic (Claude), or Google Gemini
+
+## Live Demo
+
+PR #1 on this repo was automatically reviewed by the agent. It found **17 real bugs** including:
+
+| Severity | Issue | Location |
+|----------|-------|----------|
+| 🔴 HIGH | SQL Injection Vulnerability | `auth.py:8` |
+| 🔴 HIGH | Hardcoded Secret Key + Leaked API Token | `auth.py:60` |
+| 🔴 HIGH | Cryptographically Broken Hash (MD5) | `auth.py:20` |
+| 🔴 HIGH | `eval()` on user input (Remote Code Execution) | `processor.py:36` |
+| 🔴 HIGH | N+1 Query Pattern | `auth.py:30` |
+| 🟡 MED | ZeroDivisionError | `processor.py:45` |
+| + 11 more | ... | ... |
+
+**Quality Score: 2/10** — [See the full review on PR #1 →](https://github.com/DarkKnight765/Autonomous_GitHub_Code_Review_Agent/pull/1)
+
+---
 
 ## Architecture
 
 ```
-GitHub PR Event
-    │ webhook POST
+GitHub PR opened
+    │  webhook POST (HMAC-verified)
     ▼
-FastAPI Listener ──► HMAC Signature Verification
-    │
-    ▼
-PyGithub: Fetch Diff + Metadata
-    │
-    ▼
-ChromaDB: RAG Similarity Search (optional)
+FastAPI Webhook Server (Render)
     │
     ▼
 LangGraph Pipeline
-    ├── Plan Review (split into chunks)
-    ├── Claude Analysis (via Anthropic SDK)
-    ├── Aggregate Findings
-    └── Score + Summarize
-    │
-    ▼
-Post Results via GitHub API
-    ├── Inline review comments (per finding)
-    └── Summary comment (quality score + top concerns)
-    │
-    ▼
-Feedback Store (SQLite)
-    └── Learn from dismissed suggestions
+    ├── Node 1: Fetch PR diff + metadata (PyGithub)
+    ├── Node 2: Fetch full file context
+    ├── Node 3: RAG similarity search (ChromaDB)
+    ├── Node 4: Load feedback history (SQLite)
+    ├── Node 5: AI analysis per file (Groq / Anthropic / Gemini)
+    ├── Node 6: Aggregate + deduplicate findings
+    ├── Node 7: Generate quality score + summary
+    └── Node 8: Post inline comments + summary to GitHub PR
 ```
 
 ## Tech Stack
 
 | Component | Technology |
 |-----------|-----------|
-| AI Agent Runtime | Claude (via Anthropic SDK) |
-| MCP Server | FastMCP (Model Context Protocol) |
-| GitHub Integration | PyGithub |
-| Workflow Engine | LangGraph (StateGraph) |
-| RAG / Vector Store | ChromaDB + SentenceTransformers |
-| API Server | FastAPI + Uvicorn |
-| Feedback Storage | SQLite |
-| Language | Python 3.12+ |
+| **AI / LLM** | Groq (llama-3.3-70b-versatile) · Anthropic Claude · Google Gemini |
+| **Workflow Engine** | LangGraph (StateGraph) |
+| **GitHub Integration** | PyGithub |
+| **API Server** | FastAPI + Uvicorn |
+| **RAG / Vector Store** | ChromaDB + SentenceTransformers (all-MiniLM-L6-v2) |
+| **Feedback Storage** | SQLite |
+| **Deployment** | Render (Docker) |
+| **Language** | Python 3.12+ |
+
+---
 
 ## Quick Start
 
 ### 1. Clone and Install
 
 ```bash
-git clone https://github.com/your-username/agcra.git
-cd agcra
+git clone https://github.com/DarkKnight765/Autonomous_GitHub_Code_Review_Agent.git
+cd Autonomous_GitHub_Code_Review_Agent
 pip install -r requirements.txt
 ```
 
@@ -75,116 +88,106 @@ pip install -r requirements.txt
 
 ```bash
 cp .env.example .env
-# Edit .env with your keys:
-#   GITHUB_TOKEN=ghp_...
-#   ANTHROPIC_API_KEY=sk-ant-...
-#   GITHUB_WEBHOOK_SECRET=your-secret
+# Edit .env with your keys
 ```
 
-### 3. Start the Webhook Server
+Required variables:
+
+| Variable | Description |
+|----------|-------------|
+| `GITHUB_TOKEN` | GitHub Personal Access Token (needs `repo` scope) |
+| `GITHUB_WEBHOOK_SECRET` | Random string for webhook HMAC verification |
+| `GROQ_API_KEY` | Free at [console.groq.com](https://console.groq.com) |
+| `LLM_PROVIDER` | `groq` · `anthropic` · `gemini` |
+| `REVIEW_MODEL` | `llama-3.3-70b-versatile` (Groq default) |
+
+### 3. Run Manually (No Webhook Needed)
 
 ```bash
-python -m src.webhook.app
-# Server starts at http://0.0.0.0:8000
-```
-
-### 4. Expose via ngrok (for local development)
-
-```bash
-ngrok http 8000
-# Copy the ngrok URL and set it as your GitHub webhook URL
-```
-
-### 5. Configure GitHub Webhook
-
-1. Go to your repo → Settings → Webhooks → Add webhook
-2. **Payload URL:** `https://your-ngrok-url.ngrok.io/webhook`
-3. **Content type:** `application/json`
-4. **Secret:** same as `GITHUB_WEBHOOK_SECRET` in `.env`
-5. **Events:** select "Pull requests"
-
-### 6. (Optional) Index Codebase for RAG
-
-```bash
-python scripts/index_repo.py --path /path/to/your/repo
-```
-
-### 7. Test Manually
-
-```bash
-# Review a specific PR without webhooks
+# Review any PR right now
 python scripts/run_review.py --repo owner/repo --pr 42
 
-# Dry run (analyze but don't post comments)
+# Dry run — analyze but don't post comments
 python scripts/run_review.py --repo owner/repo --pr 42 --dry-run
 ```
 
-## MCP Server (Standalone)
-
-The MCP server can be used independently with Claude Code or Claude Desktop:
+### 4. Run with Auto-Webhook (Local)
 
 ```bash
-# Run the MCP server
-python -m src.mcp_server.server
-
-# Test tools locally
-python scripts/test_mcp_server.py --tool get_pr_diff --repo owner/repo --pr 1
-python scripts/test_mcp_server.py --tool list_pr_files --repo owner/repo --pr 1
+# Starts FastAPI server + ngrok tunnel in one command
+python start_agent.py
+# Prints your public URL — add it as a GitHub webhook
 ```
 
-### Claude Desktop Configuration
+---
 
-Add to your Claude Desktop config:
+## Deployment (Cloud — Recommended)
 
-```json
-{
-  "mcpServers": {
-    "github-reviewer": {
-      "command": "python",
-      "args": ["-m", "src.mcp_server.server"],
-      "cwd": "/path/to/agcra"
-    }
-  }
-}
-```
+### Deploy to Render (Free, No Credit Card)
 
-### Available MCP Tools
+1. Fork this repo
+2. Go to [render.com](https://render.com) → **New → Web Service**
+3. Connect your GitHub repo
+4. Select **Docker** runtime (Dockerfile is included)
+5. Add environment variables (see table above)
+6. Click **Deploy**
+7. Set the webhook URL in your GitHub repo:
+   ```
+   https://your-app.onrender.com/webhook
+   ```
 
-| Tool | Description |
-|------|-------------|
-| `get_pr_diff` | Fetch the complete diff for a PR |
-| `get_pr_metadata` | Get PR title, author, branches, stats |
-| `get_file_content` | Read a file at a specific ref |
-| `list_pr_files` | List all files changed in a PR |
-| `post_review_comment` | Post an inline comment on a diff line |
-| `post_pr_summary` | Post a summary comment on the PR |
-| `search_codebase` | RAG search for similar patterns |
+### Deploy to Railway
+
+[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app)
+
+`railway.toml` is included — just connect your repo and add environment variables.
+
+---
 
 ## API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/health` | GET | Health check + review counter |
-| `/webhook` | POST | GitHub webhook receiver |
+| `/webhook` | POST | GitHub webhook receiver (HMAC verified) |
+
+```bash
+# Check if the server is live
+curl https://autonomous-github-code-review-agent.onrender.com/health
+# → {"status":"healthy","service":"AGCRA","version":"0.1.0","reviews_processed":N}
+```
+
+---
+
+## Index Your Codebase for Smarter Reviews (Optional)
+
+```bash
+# Index your repo into ChromaDB for RAG-powered context-aware reviews
+python scripts/index_repo.py --path .
+```
+
+This embeds your entire codebase so the agent can find similar patterns and avoid flagging known false positives.
+
+---
 
 ## Project Structure
 
 ```
 src/
-├── config.py              # Central configuration
+├── config.py              # Central typed configuration
 ├── webhook/               # FastAPI webhook listener
 │   ├── app.py             # Routes + background dispatch
 │   ├── security.py        # HMAC signature verification
-│   └── models.py          # Pydantic webhook models
+│   └── models.py          # Pydantic webhook event models
 ├── github_client/         # GitHub API wrapper
 │   ├── client.py          # PyGithub operations
 │   └── diff_parser.py     # Unified diff parser
-├── mcp_server/            # Custom MCP server
+├── mcp_server/            # MCP server (Claude Desktop compatible)
 │   └── server.py          # FastMCP + GitHub tools
 ├── review/                # LangGraph review pipeline
 │   ├── state.py           # Pipeline state definition
-│   ├── prompts.py         # Claude prompt templates
-│   ├── nodes.py           # Graph node functions
+│   ├── prompts.py         # LLM prompt templates
+│   ├── nodes.py           # Graph node functions (provider-agnostic)
 │   └── graph.py           # StateGraph wiring
 ├── rag/                   # ChromaDB RAG layer
 │   ├── indexer.py         # Codebase indexer
@@ -192,25 +195,52 @@ src/
 └── feedback/              # Feedback learning loop
     ├── store.py           # SQLite feedback storage
     └── learning.py        # Suppression logic
+
+scripts/
+├── run_review.py          # Manual PR review CLI
+├── index_repo.py          # Codebase RAG indexer
+└── test_mcp_server.py     # MCP server test tool
+
+Dockerfile                 # Docker image for deployment
+railway.toml               # Railway deployment config
+render.yaml                # Render deployment config
+start_agent.py             # One-command local startup (server + ngrok)
 ```
 
-## How the Review Pipeline Works
+---
 
-1. **Fetch Diff** — Gets PR metadata and file changes from GitHub API
-2. **Fetch File Context** — Reads full file content for surrounding context
-3. **Query RAG** — Finds similar patterns in the indexed codebase
-4. **Load Feedback** — Retrieves previously dismissed suggestion patterns
-5. **Review Chunks** — Sends each file diff to Claude with full context
-6. **Aggregate Findings** — Deduplicates, filters by severity, caps at limit
-7. **Generate Summary** — Creates a polished markdown summary with quality score
-8. **Post Results** — Posts inline comments + summary to the GitHub PR
+## Switching LLM Providers
+
+Change the provider in `.env` — no code changes needed:
+
+```bash
+# Use Groq (free — 1M tokens/day)
+LLM_PROVIDER=groq
+REVIEW_MODEL=llama-3.3-70b-versatile
+GROQ_API_KEY=gsk_...
+
+# Use Anthropic Claude
+LLM_PROVIDER=anthropic
+REVIEW_MODEL=claude-3-5-sonnet-20241022
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Use Google Gemini
+LLM_PROVIDER=gemini
+REVIEW_MODEL=gemini-2.0-flash
+GEMINI_API_KEY=AIza...
+```
+
+---
 
 ## Running Tests
 
 ```bash
 pip install -e ".[dev]"
 python -m pytest tests/ -v
+# 34 tests passing
 ```
+
+---
 
 ## License
 
