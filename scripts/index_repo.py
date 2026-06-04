@@ -9,9 +9,15 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import io
 import logging
 import os
 import sys
+
+# Fix Windows console encoding
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -64,7 +70,7 @@ def main():
     stats = indexer.index_directory(args.path)
 
     print("\n" + "=" * 50)
-    print("📊 Indexing Results")
+    print("Indexing Results")
     print("=" * 50)
     print(f"  Files indexed:  {stats['files_indexed']}")
     print(f"  Chunks added:   {stats['chunks_added']}")
