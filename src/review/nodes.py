@@ -235,6 +235,13 @@ def query_rag(state: ReviewState) -> dict:
 
     similar_patterns: list[str] = []
 
+    # Skip RAG if explicitly disabled or if chroma_db doesn't exist (e.g. cloud deploy)
+    rag_enabled = os.getenv("RAG_ENABLED", "true").lower() != "false"
+    chroma_path = os.getenv("CHROMA_DB_PATH", "./data/chroma_db")
+    if not rag_enabled or not os.path.exists(chroma_path):
+        logger.info("⏭ RAG skipped (not available on this deployment).")
+        return {"similar_patterns": similar_patterns}
+
     try:
         from src.rag.retriever import PatternRetriever
 
