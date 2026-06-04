@@ -1,0 +1,24 @@
+name: Keep Render Alive
+
+on:
+  schedule:
+    # Ping every 10 minutes to prevent Render free tier from sleeping
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render health endpoint
+        run: |
+          echo "Pinging Render to keep it awake..."
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            https://autonomous-github-code-review-agent.onrender.com/health \
+            --max-time 30)
+          echo "Response status: $STATUS"
+          if [ "$STATUS" = "200" ]; then
+            echo "✅ Render is alive!"
+          else
+            echo "⚠️ Render returned status $STATUS"
+          fi
