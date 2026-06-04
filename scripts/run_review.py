@@ -10,15 +10,24 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import io
 import json
 import logging
 import os
 import sys
 
+# Fix Windows console encoding for Unicode/emoji output
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.config import setup_logging
+
+# Severity icons with ASCII fallbacks for Windows compatibility
+SEVERITY_ICONS = {"high": "[HIGH]", "medium": "[MED]", "low": "[LOW]"}
 
 
 def main():
@@ -46,10 +55,10 @@ def main():
     setup_logging("INFO")
 
     logger = logging.getLogger(__name__)
-    logger.info(f"🚀 Manually reviewing {args.repo} PR #{args.pr}")
+    logger.info(f"Manually reviewing {args.repo} PR #{args.pr}")
 
     if args.dry_run:
-        logger.info("🔍 DRY RUN — will not post comments to GitHub")
+        logger.info("DRY RUN -- will not post comments to GitHub")
 
     # Import and run the pipeline
     from src.review.graph import review_graph
@@ -64,7 +73,7 @@ def main():
 
     # Print results
     print("\n" + "=" * 60)
-    print("📋 REVIEW RESULTS")
+    print("REVIEW RESULTS")
     print("=" * 60)
     print(f"  Repository:    {args.repo}")
     print(f"  PR Number:     #{args.pr}")
@@ -75,45 +84,38 @@ def main():
     if result.get("top_concerns"):
         print("\n  Top Concerns:")
         for concern in result["top_concerns"]:
-            print(f"    • {concern}")
+            print(f"    * {concern}")
 
     if result.get("findings"):
         print("\n  All Findings:")
         for f in result["findings"]:
-            severity_icon = {"high": "🔴", "medium": "🟡", "low": "🔵"}.get(
-                f.get("severity", ""), "⚪"
-            )
-            print(f"    {severity_icon} [{f.get('severity', '?')}] {f.get('title', '?')}")
+            icon = SEVERITY_ICONS.get(f.get("severity", ""), "[?]")
+            print(f"    {icon} {f.get('title', '?')}")
             print(f"       {f.get('file', '?')}:{f.get('line', '?')}")
 
     if result.get("errors"):
-        print("\n  ⚠ Errors:")
+        print("\n  Errors:")
         for e in result["errors"]:
-            print(f"    • {e}")
+            print(f"    * {e}")
 
     print("=" * 60)
 
     # Optionally dump full results to JSON
     if args.dry_run:
         output_path = f"review_pr{args.pr}_results.json"
-        with open(output_path, "w") as fp:
-            # Filter out non-serializable items
+        with open(output_path, "w", encoding="utf-8") as fp:
             serializable = {
                 k: v for k, v in result.items()
                 if isinstance(v, (str, int, float, bool, list, dict, type(None)))
             }
             json.dump(serializable, fp, indent=2)
-        print(f"\n📄 Full results saved to {output_path}")
+        print(f"\nFull results saved to {output_path}")
 
 
 async def _run_review(graph, initial_state: dict, dry_run: bool) -> dict:
-    """Run the review graph, optionally skipping the post step."""
+    """Run the review graph."""
     if dry_run:
-        # For dry-run, we run all nodes except post_results
-        # We can do this by running the graph normally but catching the post
-        # For simplicity, just run the full graph — post_results will fail
-        # gracefully if we haven't set up credentials, or succeed if we have
-        pass
+        pass  # future: skip post_results node
 
     result = await graph.ainvoke(initial_state)
     return result

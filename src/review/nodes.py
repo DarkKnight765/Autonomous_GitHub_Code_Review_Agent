@@ -11,8 +11,6 @@ import json
 import logging
 import os
 
-from anthropic import Anthropic
-
 from src.config import load_settings
 from src.github_client.client import GitHubReviewClient, ReviewComment, ReviewSubmission
 from src.github_client.diff_parser import DiffParser, format_diff_for_review
@@ -32,22 +30,87 @@ def _get_settings():
     try:
         return load_settings()
     except Exception:
-        # Fallback for when env vars aren't fully set
         return None
 
 
-def _get_anthropic_client() -> Anthropic:
-    """Create an Anthropic client."""
+def _get_provider() -> str:
+    """Get the configured LLM provider ('gemini' or 'anthropic')."""
     settings = _get_settings()
-    api_key = settings.anthropic_api_key if settings else os.getenv("ANTHROPIC_API_KEY", "")
-    return Anthropic(api_key=api_key)
+    return (
+        settings.llm_provider if settings
+        else os.getenv("LLM_PROVIDER", "gemini")
+    )
 
 
 def _get_review_model() -> str:
     """Get the configured review model."""
     settings = _get_settings()
-    default = "claude-sonnet-4-20250514"
+    default = "gemini-2.0-flash"
     return settings.review_model if settings else os.getenv("REVIEW_MODEL", default)
+
+
+def call_llm(system: str, user: str) -> str:
+    """
+    Provider-agnostic LLM call. Routes to Groq, Gemini, or Anthropic
+    based on the LLM_PROVIDER environment variable.
+
+    Returns the raw text response from the model.
+    """
+    provider = _get_provider()
+    model = _get_review_model()
+    settings = _get_settings()
+
+    if provider == "groq":
+        from groq import Groq
+        api_key = (
+            settings.groq_api_key if settings
+            else os.getenv("GROQ_API_KEY", "")
+        )
+        client = Groq(api_key=api_key)
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            max_tokens=4096,
+        )
+        return response.choices[0].message.content
+
+    elif provider == "gemini":
+        from google import genai
+        from google.genai import types
+        api_key = (
+            settings.gemini_api_key if settings
+            else os.getenv("GEMINI_API_KEY", "")
+        )
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model=model,
+            contents=user,
+            config=types.GenerateContentConfig(
+                system_instruction=system,
+                max_output_tokens=4096,
+            ),
+        )
+        return response.text
+
+    else:  # anthropic
+        from anthropic import Anthropic
+        api_key = (
+            settings.anthropic_api_key if settings
+            else os.getenv("ANTHROPIC_API_KEY", "")
+        )
+        client = Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model=model,
+            max_tokens=4096,
+            system=system,
+            messages=[{"role": "user", "content": user}],
+        )
+        return response.content[0].text
+
+
 
 
 # ── Node 1: Fetch Diff ─────────────────────────────────────────
@@ -249,10 +312,7 @@ def review_chunks(state: ReviewState) -> dict:
     similar_patterns = state.get("similar_patterns", [])
     past_dismissed = state.get("past_dismissed", [])
 
-    logger.info(f"🤖 Reviewing {len(diff_chunks)} file diffs with Claude...")
-
-    client = _get_anthropic_client()
-    model = _get_review_model()
+    logger.info(f"🤖 Reviewing {len(diff_chunks)} file diffs with LLM...")
 
     # Build dismissed patterns context
     dismissed_text = "None" if not past_dismissed else "\n".join(
@@ -291,15 +351,7 @@ def review_chunks(state: ReviewState) -> dict:
         )
 
         try:
-            response = client.messages.create(
-                model=model,
-                max_tokens=4096,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_prompt}],
-            )
-
-            # Parse Claude's JSON response
-            response_text = response.content[0].text.strip()
+            response_text = call_llm(system=system_prompt, user=user_prompt).strip()
 
             # Handle markdown-fenced JSON
             if response_text.startswith("```"):
@@ -418,10 +470,7 @@ def generate_summary(state: ReviewState) -> dict:
     repo = state["repo"]
     pr_number = state["pr_number"]
 
-    logger.info("📝 Generating review summary...")
-
-    client = _get_anthropic_client()
-    model = _get_review_model()
+    logger.info("Generating review summary...")
 
     # Build findings JSON for the prompt
     findings_json = json.dumps(findings, indent=2) if findings else "No issues found."
@@ -438,14 +487,7 @@ def generate_summary(state: ReviewState) -> dict:
     )
 
     try:
-        response = client.messages.create(
-            model=model,
-            max_tokens=2048,
-            system=SUMMARY_SYSTEM,
-            messages=[{"role": "user", "content": user_prompt}],
-        )
-
-        summary = response.content[0].text.strip()
+        summary = call_llm(system=SUMMARY_SYSTEM, user=user_prompt).strip()
 
         # Calculate quality score based on findings
         high_count = sum(1 for f in findings if f.get("severity") == "high")

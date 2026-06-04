@@ -37,7 +37,14 @@ class Settings:
 
     # ── Anthropic / Claude ──────────────────────────────────────
     anthropic_api_key: str = ""
-    review_model: str = "claude-sonnet-4-20250514"
+    review_model: str = "gemini-2.0-flash"
+
+    # ── Google Gemini ────────────────────────────────────────────
+    gemini_api_key: str = ""
+
+    # ── Groq ─────────────────────────────────────────────────────
+    groq_api_key: str = ""
+    llm_provider: str = "groq"  # "anthropic", "gemini", or "groq"
 
     # ── Server ──────────────────────────────────────────────────
     host: str = "0.0.0.0"
@@ -92,7 +99,10 @@ def load_settings() -> Settings:
         github_webhook_secret=os.getenv("GITHUB_WEBHOOK_SECRET", ""),
         target_repo=os.getenv("TARGET_REPO", ""),
         anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
-        review_model=os.getenv("REVIEW_MODEL", "claude-sonnet-4-20250514"),
+        review_model=os.getenv("REVIEW_MODEL", "gemini-2.0-flash"),
+        gemini_api_key=os.getenv("GEMINI_API_KEY", ""),
+        groq_api_key=os.getenv("GROQ_API_KEY", ""),
+        llm_provider=os.getenv("LLM_PROVIDER", "groq"),
         host=os.getenv("HOST", "0.0.0.0"),
         port=int(os.getenv("PORT", "8000")),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
