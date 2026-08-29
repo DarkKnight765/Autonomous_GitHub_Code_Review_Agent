@@ -15,7 +15,7 @@ jobs:
           echo "Pinging Render to keep it awake..."
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             https://autonomous-github-code-review-agent.onrender.com/health \
-            --max-time 30)
+            --max-time 30 || true)
           echo "Response status: $STATUS"
           if [ "$STATUS" = "200" ]; then
             echo "✅ Render is alive!"
